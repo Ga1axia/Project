@@ -2,6 +2,22 @@
 
 Lightweight manager-facing web UI to view equipment assigned to direct/indirect reports, mark items as collected, and track collection events with IT notifications and close-out.
 
+---
+
+## Handoff documentation
+
+If you're onboarding to this codebase or handing off to a client, start here:
+
+| Document | Purpose |
+|----------|---------|
+| **[DELIVERABLE_Software_Description_and_Integrations.md](./DELIVERABLE_Software_Description_and_Integrations.md)** | Full deliverable description: how the software maps to the original project outline, all integrations (database, ref tab, AD/Entra, notifications, auth), data model, deployment, and suggested next steps. Use this as the main handoff reference. |
+| **[API_CONNECTIONS.md](./API_CONNECTIONS.md)** | Condensed reference for every external connection: env vars, expected API contracts, and configuration. Use this when wiring up ref tab, notifications, or auth. |
+| **[.env.example](./.env.example)** | Template for all environment variables. Copy to `.env` and fill in values for local or deployed environments. |
+
+The deliverable document also describes capabilities outside the web UI (APIs, data, and integration points) for integration or future clients.
+
+---
+
 ## Quick start
 
 ```bash
