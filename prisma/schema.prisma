@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                String   @id @default(cuid())
+  employeeId        String   @unique
+  upn               String?
+  displayName       String
+  email             String
+  managerId         String?
+  manager           User?    @relation("ManagerReports", fields: [managerId], references: [id])
+  directReports     User[]   @relation("ManagerReports")
+  isManager         Boolean  @default(false)
+  lastSyncedAt      DateTime?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  equipmentAssignments EquipmentAssignment[]
+  markedCollections    CollectionEvent[]  @relation("MarkedByManager")
+  closedOutEvents      CollectionEvent[]  @relation("ClosedOutByIT")
+}
+
+model EquipmentAssignment {
+  id                   String   @id @default(cuid())
+  assetTag             String
+  serial               String?
+  model                String?
+  assignedToEmployeeId String
+  source               String   @default("ref_tab")
+  lastSyncedAt         DateTime?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@unique([assetTag, assignedToEmployeeId])
+  user  User?  @relation(fields: [assignedToEmployeeId], references: [employeeId])
+  events CollectionEvent[]
+}
+
+model CollectionEvent {
+  id                            String   @id @default(cuid())
+  assetTag                      String
+  serial                        String?
+  assignedToEmployeeId          String
+  markedCollectedByManagerId    String
+  markedCollectedAt             DateTime @default(now())
+  notes                         String?
+  status                        String   @default("COLLECTED_PENDING_IT")
+
+  closedOutAt                   DateTime?
+  closedOutByItEmployeeId       String?
+
+  equipmentAssignmentId         String?
+  equipmentAssignment           EquipmentAssignment? @relation(fields: [equipmentAssignmentId], references: [id])
+  markedByManager               User     @relation("MarkedByManager", fields: [markedCollectedByManagerId], references: [id])
+  closedOutByIt                 User?    @relation("ClosedOutByIT", fields: [closedOutByItEmployeeId], references: [id])
+
+  createdAt                     DateTime @default(now())
+  updatedAt                     DateTime @updatedAt
+}

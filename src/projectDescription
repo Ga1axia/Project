@@ -1,0 +1,143 @@
+Coding Project Proposal: Manager Equipment Collection Portal
+1) Project Overview
+Goal
+Build a lightweight, manager-facing web UI that shows managers the equipment assigned to their direct/indirect reports and lets managers mark items as “received/collected.” When an item is marked collected, the system alerts IT and creates a collection log so pickups/returns can be tracked and formally closed out. This is a “last mile logistics” tool to prevent equipment from being left with departing staff and to ensure collection accountability.
+Strategy
+Front-end first: deliver usable prototypes quickly, then wire into live systems via environment variables and documented APIs. Use Active Directory / Entra’s manager field to determine who a manager can view.
+Pilot
+Prototype for ~1–2 weeks, review usability and collaboration, then expand scope if successful.
+
+2) Scope and Core Requirements
+A) Manager UI (Web App)
+Show a staff list scoped to the authenticated manager (including indirect reports if enabled).
+Show equipment assigned per staff member (from ref tab data).
+Allow manager action: Mark as “Collected/Received” (with timestamp and optional notes).
+Enforce visibility rules based on AD/Entra manager hierarchy (no cross-team visibility).
+B) Alerts to IT
+When a manager marks an item collected:
+Create a collection event record in the database
+Notify IT via a configurable channel (Email / Teams / webhook)
+C) Data & Logging
+Persist AD/Entra-derived user records (employee identifier, manager relationships, etc.) in DB for fast lookup.
+Maintain collection logs:
+Collection event history (who marked it, when, notes)
+“Close out” state once IT has physically recovered the item (pickup/received by IT)
+D) Integration & Deployment
+Integrate with ref tab API for equipment assignment records.
+Deploy via GitHub → Coolify/Nixpacks, with environment variables supplying secrets/API keys.
+App framework suggestion: Next.js (fast UI prototyping, API routes, auth-friendly).
+
+3) Technical Approach
+Authentication & Authorization
+Use organization SSO where feasible (or a pilot-friendly auth approach), then:
+Identify the current user
+Resolve that user’s direct/indirect reports from AD/Entra data
+Restrict all queries/results to that scope
+Manager Hierarchy Resolution
+Primary mechanism: AD/Entra manager attribute
+Store a normalized representation in DB:
+users table with manager pointers
+Optional cached hierarchy/closure table for faster “indirect reports” queries
+Data Flow
+Manager opens portal → authenticates
+App queries DB for manager’s org scope (staff list)
+App fetches equipment for staff from ref tab (directly or via caching layer)
+Manager marks item collected → app writes collection record → triggers IT notification
+IT marks item closed out when pickup is complete
+
+4) System Components
+Front-end
+Next.js UI pages:
+Manager dashboard (staff list + equipment summaries)
+Staff detail view (equipment list + status)
+Collection history / activity feed (optional in pilot)
+Backend (API layer)
+Next.js API routes or separate lightweight service
+Endpoints for:
+staff scope retrieval
+equipment retrieval (ref tab proxy)
+collection action logging
+close out actions (IT role)
+Database
+Stores:
+AD/Entra user + manager relationships
+Equipment references (optional cache)
+Collection logs + close out status
+Notifications
+Configurable notification provider:
+Email (SMTP/O365), Teams webhook, or n8n webhook
+Pilot can start with the simplest reliable channel
+
+5) Data Model (Pilot-Level)
+Users
+id
+employee_id / upn / samAccountName (whatever is stable)
+display_name
+email
+manager_id (FK to users)
+is_manager (optional convenience)
+last_synced_at
+Equipment Assignments (optional cache)
+id
+asset_tag
+serial
+model
+assigned_to_employee_id
+source (ref tab)
+last_synced_at
+Collection Events
+id
+asset_id (or asset_tag/serial reference)
+assigned_to_employee_id
+marked_collected_by_manager_employee_id
+marked_collected_at
+notes
+status (e.g., COLLECTED_PENDING_IT, CLOSED_OUT)
+closed_out_by_it_employee_id (nullable)
+closed_out_at (nullable)
+
+6) Pilot Deliverables (What “Done” Looks Like)
+Within the pilot window, deliver:
+2–3 UI prototypes demonstrating:
+staff list scoped by manager hierarchy
+equipment list per staff member
+manager action to mark “collected/received”
+Initial database schema for AD/Entra user data + collection logging + close out
+Notification flow when an item is marked collected (Email/Teams/webhook)
+Integration plan and initial wiring to ref tab API (live once env vars are available)
+
+7) Implementation Plan (Pilot)
+Phase 1 — UI Prototypes (Front-end first)
+Build 2–3 prototype variants:
+Table-first dashboard (fast scanning)
+Staff card layout (people-centric)
+Asset-centric list (return logistics-centric)
+Use dummy data to validate UX and flows
+Phase 2 — Data Wiring
+Add DB schema + seed/sync for AD user/manager mapping
+Add ref tab integration (proxy or direct)
+Replace dummy equipment data with live API responses
+Phase 3 — Logging + Alerts
+Implement “mark collected” action and persistence
+Trigger IT notifications
+Add “close out” workflow for IT
+
+8) Assumptions and Constraints
+AD/Entra manager field is sufficiently populated to construct a hierarchy.
+A stable identifier exists to match user records to equipment assignments (employee ID / UPN / email).
+ref tab API provides required equipment assignment fields (asset tag/serial, assigned user, status).
+Deployment environment supports env vars and outbound notification channel.
+
+9) Risks and Mitigations
+Incomplete manager field mapping → provide fallback rules (direct reports only; manual overrides later)
+Identifier mismatches (AD vs ref tab) → define a canonical join key early and validate with sample data
+API rate limits / latency → cache equipment assignments in DB if needed
+Notification reliability → start with a simple, robust channel; add richer workflows later
+
+10) Immediate Next Steps
+Provide AD field schema / DB headers format (JSON and/or CSV headers)
+Share ref tab API documentation and confirm required endpoints/fields
+Create GitHub repo and baseline Next.js scaffold with deployment config for Coolify/Nixpacks
+Decide pilot notification channel (Email vs Teams vs webhook)
+Set a weekly check-in cadence and prototype review meeting
+
