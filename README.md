@@ -11,10 +11,36 @@ If you're onboarding to this codebase or handing off to a client, start here:
 | Document | Purpose |
 |----------|---------|
 | **[DELIVERABLE_Software_Description_and_Integrations.md](./DELIVERABLE_Software_Description_and_Integrations.md)** | Full deliverable description: how the software maps to the original project outline, all integrations (database, ref tab, AD/Entra, notifications, auth), data model, deployment, and suggested next steps. Use this as the main handoff reference. |
-| **[API_CONNECTIONS.md](./API_CONNECTIONS.md)** | Condensed reference for every external connection: env vars, expected API contracts, and configuration. Use this when wiring up ref tab, notifications, or auth. |
+| **[API_CONNECTIONS.md](./API_CONNECTIONS.md)** | Condensed reference for every external connection: env vars, Reftab HMAC + `/assets` contract, notifications, and auth. |
 | **[.env.example](./.env.example)** | Template for all environment variables. Copy to `.env` and fill in values for local or deployed environments. |
 
 The deliverable document also describes capabilities outside the web UI (APIs, data, and integration points) for integration or future clients.
+
+---
+
+## Is it ready to run? (API, Coolify, Docker)
+
+**API & app:** Yes. The Next.js app and all API routes (`/api/me`, `/api/staff`, `/api/equipment`, `/api/collect`, `/api/collection`, `/api/closeout`) are implemented and run as soon as the app starts.
+
+**Coolify / Nixpacks:** Yes. The repo includes `nixpacks.toml`; Coolify can build with Nixpacks (or use the Dockerfile). Build runs `npm ci`, `prisma generate`, `npm run build`; start runs `npm run start`. You must run the database schema once before the app is usable: run `npx prisma db push` (and optionally `npm run db:seed`) either in a one-off job after first deploy, or add a release/init step in your pipeline. Set all env vars from `.env.example` in Coolify.
+
+**Docker:** Yes. The `Dockerfile` builds a standalone image and runs `node server.js`. Use **Postgres** in production (`DATABASE_URL=postgresql://...`); run `prisma db push` or `prisma migrate deploy` when the DB is available. For **SQLite** in Docker you need a writable volume for the DB file and must run `prisma db push` (and optionally seed) inside the container or in an init job.
+
+---
+
+## With env files set — what can it do?
+
+Once you set env vars (from `.env.example`) and run the app with a migrated (and optionally seeded) database:
+
+| What you configure | What works |
+|--------------------|------------|
+| **Minimum:** `DATABASE_URL` + `MANAGER_EMPLOYEE_IDS` (and you’ve run `prisma db push` + `db:seed`) | App runs. Manager can log in (pilot: first manager in list or `CURRENT_USER_EMPLOYEE_ID`). Staff list (from DB), equipment from **seed/cache only**, mark collected, collection log, close-out. **No** IT notifications (call fails quietly); **no** live ref tab. |
+| **+ Reftab:** `REF_TAB_API_URL` (default `https://www.reftab.com/api`), `REF_TAB_API_PUBLIC_KEY`, `REF_TAB_API_SECRET_KEY` | Everything above, plus equipment is **merged from Reftab** via `GET /assets` (HMAC auth). Optional field mapping env vars — see [API_CONNECTIONS.md](./API_CONNECTIONS.md). If Reftab is not configured or returns nothing, cached/seed equipment still shows. |
+| **+ Notifications:** `NOTIFICATION_PROVIDER` + one of `WEBHOOK_URL` / `TEAMS_WEBHOOK_URL` / SMTP vars | When a manager marks an item collected, **IT is notified** (webhook POST, Teams message, or email). Collection event is still stored even if the notification fails. |
+| **+ `APP_BASE_URL`** | Links in notifications point to this URL (e.g. collection page). |
+| **+ `CURRENT_USER_EMPLOYEE_ID`** (pilot) | Override which manager is “logged in” for testing (must be in `MANAGER_EMPLOYEE_IDS`). |
+
+**Summary:** With **only** database + manager list + seed data, the app already does: manager dashboard (staff + equipment from DB), staff detail, mark collected, collection history, and close-out. Adding **Reftab** public/secret keys (see [Reftab API docs](https://www.reftab.com/api-docs)) turns on live equipment from **`GET /assets`**; adding notification env vars turns on IT alerts. No code changes required—just env and one-time DB setup.
 
 ---
 
@@ -47,17 +73,14 @@ Open http://localhost:3000. Pilot auth uses `CURRENT_USER_EMPLOYEE_ID` (or first
 
 ---
 
-### 2) **Ref Tab API (equipment source)**
+### 2) **Reftab API (equipment source)**
 
-- **What:** External API that returns equipment assignments (asset tag, serial, model, assigned user).
-- **Env:**  
-  - `REF_TAB_API_URL` – base URL (e.g. `https://ref-tab.example.com/api`)  
-  - `REF_TAB_API_KEY` – Bearer token or API key for auth
-- **Expected contract (to implement or confirm with ref tab):**
-  - **Endpoint:** `GET {REF_TAB_API_URL}/assignments?employee_id={employeeId}`
-  - **Response:** JSON array of assignments, e.g.  
-    `[{ "asset_tag": "...", "serial": "...", "model": "...", "assigned_to_employee_id": "EMP001", "status": "..." }]`
-- **Usage:** Fetched when loading equipment in the manager UI; results are merged with DB-cached assignments. If ref tab is not configured, only DB cache is used (e.g. seed data).
+- **What:** [Reftab](https://www.reftab.com/api-docs) asset management API. Create keys under **Settings → API Keys**.
+- **Auth:** **Public + secret key pair** with **HMAC-SHA256** (`Authorization: RT {public}:{token}`, header `x-rt-date`). Matches Reftab’s [Postman](https://www.reftab.com/faq/postman-reftab-api) instructions and [ReftabNode](https://github.com/Reftab/ReftabNode).
+- **How the portal uses it:** `GET {REF_TAB_API_URL}/assets?limit=…` (Reftab Cloud default base `https://www.reftab.com/api`), then keeps assets whose assignee field matches each report’s `User.employeeId`.
+- **Env:** `REF_TAB_API_PUBLIC_KEY`, `REF_TAB_API_SECRET_KEY`, optional URL, limits, and field mapping — see [API_CONNECTIONS.md](./API_CONNECTIONS.md).
+- **Legacy:** If only `REF_TAB_API_KEY` is set, the app calls a **custom** Bearer `/assignments?employee_id=` gateway (not the live Reftab cloud API).
+- **Usage:** Merged with DB-cached equipment in the manager UI. If Reftab keys are unset, only DB cache is used (e.g. seed data).
 
 ---
 
@@ -102,7 +125,7 @@ Exactly one channel is used, driven by `NOTIFICATION_PROVIDER` and the correspon
 | Connection        | Type        | Required for pilot? | Env / config |
 |------------------|-------------|----------------------|--------------|
 | Database         | Internal DB | Yes                  | `DATABASE_URL` |
-| Ref Tab          | HTTP API    | No (use seed data)   | `REF_TAB_API_URL`, `REF_TAB_API_KEY` |
+| Reftab           | HTTP API    | No (use seed data)   | `REF_TAB_API_URL`, `REF_TAB_API_PUBLIC_KEY`, `REF_TAB_API_SECRET_KEY` (+ optional field envs) |
 | AD/Entra         | Sync → DB   | No (use seed)        | Your sync job + `User` table |
 | IT notification  | Webhook/Teams/Email | Yes (to alert IT) | `NOTIFICATION_PROVIDER` + `WEBHOOK_URL` or `TEAMS_WEBHOOK_URL` or SMTP vars |
 | Auth             | Env / later SSO | Yes (env)        | `CURRENT_USER_EMPLOYEE_ID`, `MANAGER_EMPLOYEE_IDS` |

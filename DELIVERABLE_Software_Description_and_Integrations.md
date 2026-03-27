@@ -60,7 +60,7 @@ The following sections align the delivered software with your outline.
 
 | Requirement | Delivered |
 |-------------|-----------|
-| Integrate with ref tab API for equipment | ✅ Ref tab client; equipment API merges ref tab response with DB cache; env-based URL and key. |
+| Integrate with ref tab API for equipment | ✅ Reftab client (HMAC + `GET /assets`); equipment API merges Reftab with DB cache; env-based URL, keys, and field mapping. |
 | Deploy via GitHub → Coolify/Nixpacks, env vars for secrets/API keys | ✅ `Dockerfile`, `nixpacks.toml`; all configuration via env (see `.env.example`). |
 | Next.js | ✅ Next.js 14 with App Router, API routes, Tailwind. |
 
@@ -125,7 +125,7 @@ All of these enforce manager scope; no cross-team data is returned.
 
 ### 3.3 Integrations (non-UI)
 
-- **Ref tab** — Fetches equipment by employee ID(s); results merged with DB in equipment API.
+- **Reftab** — Signed `GET /assets`, filtered to report scope; merged with DB in equipment API.
 - **IT notifications** — One channel (webhook, Teams, or email) invoked on each “mark collected.”
 - **Auth (pilot)** — Current user from env; production can switch to SSO and map token to `User.employeeId`.
 
@@ -173,24 +173,25 @@ The app owns this database; no external database API is called. Used for users, 
 
 ---
 
-### 5.2 Ref Tab API (equipment source)
+### 5.2 Reftab API (equipment source)
+
+Official documentation: [Reftab API](https://www.reftab.com/api-docs). Auth and signing follow Reftab’s documented HMAC model ([Postman guide](https://www.reftab.com/faq/postman-reftab-api); reference implementation [ReftabNode](https://github.com/Reftab/ReftabNode)).
 
 | Variable | Description |
 |----------|-------------|
-| `REF_TAB_API_URL` | Base URL of the ref tab API (e.g. `https://ref-tab.example.com/api`). |
-| `REF_TAB_API_KEY` | Bearer token or API key for authentication. |
+| `REF_TAB_API_URL` | API base. Reftab Cloud default: `https://www.reftab.com/api`. |
+| `REF_TAB_API_PUBLIC_KEY` | Public key from **Settings → API Keys** in Reftab. |
+| `REF_TAB_API_SECRET_KEY` | Secret key for the same pair. |
+| `REF_TAB_ASSETS_LIMIT` | Optional. Assets to fetch per `GET /assets` (default `500`). |
+| `REF_TAB_ASSIGNEE_FIELD` | Optional. Dot-path on each asset that must match `User.employeeId` (default `loanee`). Tenant-specific — confirm with your `GET /assets` JSON. |
+| `REF_TAB_ASSET_TAG_FIELD` | Optional. Default `id` (Reftab asset id / tag). |
+| `REF_TAB_SERIAL_FIELD` | Optional. Default `serial`. |
+| `REF_TAB_MODEL_FIELD` | Optional. Default `title`. |
+| `REF_TAB_API_KEY` | **Legacy only:** Bearer token for a custom `/assignments?employee_id=` proxy (not used when public + secret are set). |
 
-**Expected contract (to implement or confirm with your ref tab provider):**
+**How the portal integrates:** One signed **`GET {REF_TAB_API_URL}/assets?limit=…`** per equipment load, then in-memory filter by assignee to the manager’s report `employeeId` list. Results are merged with DB-cached equipment. Match the assignee field to your directory sync (same value as `User.employeeId`), or use a dot-path such as `loanee.email` if your users are keyed by email.
 
-- **Method/URL:** `GET {REF_TAB_API_URL}/assignments?employee_id={employeeId}`
-- **Headers:** `Authorization: Bearer {REF_TAB_API_KEY}`
-- **Response:** JSON array of objects with at least:
-  - `asset_tag` (string)
-  - `serial` (string, optional)
-  - `model` (string, optional)
-  - `assigned_to_employee_id` (string)
-
-If these variables are not set, the app uses only DB-cached equipment (e.g. seed data).
+If public/secret keys are not set, the app uses only DB-cached equipment (e.g. seed data).
 
 ---
 
@@ -252,7 +253,7 @@ Copy `.env.example` to `.env` and fill in values. Summary:
 | `DATABASE_URL` | SQLite (pilot) or PostgreSQL (production). |
 | `MANAGER_EMPLOYEE_IDS` | Comma-separated manager employee IDs (pilot). |
 | `CURRENT_USER_EMPLOYEE_ID` | Optional override for “current user” (pilot). |
-| `REF_TAB_API_URL`, `REF_TAB_API_KEY` | Ref tab API (optional for pilot). |
+| `REF_TAB_API_URL`, `REF_TAB_API_PUBLIC_KEY`, `REF_TAB_API_SECRET_KEY`, optional field/limit vars | Reftab API (optional for pilot). |
 | `NOTIFICATION_PROVIDER` | `email` \| `teams` \| `webhook`. |
 | `WEBHOOK_URL` | For webhook provider. |
 | `TEAMS_WEBHOOK_URL` | For Teams provider. |
@@ -287,7 +288,7 @@ The repository includes a `Dockerfile` and `nixpacks.toml` for GitHub → Coolif
 
 ## 9. Suggested next steps (from your outline and this deliverable)
 
-1. **Ref tab** — Confirm ref tab API base URL, auth, and response shape (assignments by `employee_id`); set `REF_TAB_API_URL` and `REF_TAB_API_KEY` in deployment.
+1. **Reftab** — Generate API keys in Reftab, set `REF_TAB_API_PUBLIC_KEY` / `REF_TAB_API_SECRET_KEY` (and URL if not Reftab Cloud). Inspect `GET /assets` in [api-docs](https://www.reftab.com/api-docs) or Postman and tune `REF_TAB_ASSIGNEE_FIELD` (and related field paths) so assignees align with `User.employeeId`.
 2. **AD/Entra sync** — Provide or agree on AD/Entra field schema (or CSV/JSON headers) and implement a sync job that updates the User table (and optionally `lastSyncedAt`).
 3. **Notification channel** — Choose pilot channel (Email vs Teams vs webhook) and set the corresponding env vars.
 4. **Production auth** — Replace pilot env-based “current user” with SSO; map token to `User.employeeId` and keep existing API and scope logic.

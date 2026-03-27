@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { isLoggedIn, getDashboardView, type DashboardView } from "@/lib/auth-session";
-import type { DashboardData } from "@/types/dashboard";
+import type { DashboardData, Equipment } from "@/types/dashboard";
 import DashboardTable from "@/components/DashboardTable";
 import DashboardCards from "@/components/DashboardCards";
 import DashboardAssets from "@/components/DashboardAssets";
@@ -14,7 +14,7 @@ const VIEW_MAP = {
   assets: DashboardAssets,
 } as const;
 
-export default function DashboardPage() {
+function DashboardPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialSearch = searchParams.get("search") ?? "";
@@ -48,11 +48,11 @@ export default function DashboardPage() {
         if (!meRes.ok) throw new Error("Not authenticated");
         const me = await meRes.json();
         const staff = staffRes.ok ? await staffRes.json() : [];
-        const equipment = eqRes.ok ? await eqRes.json() : [];
-        const equipmentByEmployee = equipment.reduce<Record<string, typeof equipment>>((acc, e) => {
+        const equipment = (eqRes.ok ? await eqRes.json() : []) as Equipment[];
+        const equipmentByEmployee = equipment.reduce<Record<string, Equipment[]>>((acc, e) => {
           (acc[e.assignedToEmployeeId] = acc[e.assignedToEmployeeId] ?? []).push(e);
           return acc;
-        }, {} as Record<string, typeof equipment>);
+        }, {});
         setData({ me, staff, equipment, equipmentByEmployee });
       } catch (e) {
         setError(e instanceof Error ? e.message : "Failed to load");
@@ -70,4 +70,12 @@ export default function DashboardPage() {
 
   const Component = VIEW_MAP[view];
   return <Component data={data} initialSearchQuery={initialSearch} />;
+}
+
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={<div className="text-[var(--muted)]">Loading…</div>}>
+      <DashboardPageInner />
+    </Suspense>
+  );
 }

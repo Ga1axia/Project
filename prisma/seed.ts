@@ -63,7 +63,7 @@ async function main() {
         upn: email,
         displayName: name,
         email,
-        managerId: managerById[managerKey],
+        managerId: managerById[managerKey as keyof typeof managerById],
         isManager: false,
       },
     });
