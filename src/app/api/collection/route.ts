@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getCurrentEmployeeId, getReportEmployeeIds } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 
+export const dynamic = "force-dynamic";
+
 export async function GET() {
   const managerId = await getCurrentEmployeeId();
   if (!managerId) {

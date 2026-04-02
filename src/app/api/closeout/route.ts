@@ -5,6 +5,8 @@ import { prisma } from "@/lib/db";
 
 const bodySchema = z.object({ eventId: z.string().min(1) });
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const employeeId = await getCurrentEmployeeId();
   if (!employeeId) {

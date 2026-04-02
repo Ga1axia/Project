@@ -134,8 +134,9 @@ Exactly one channel is used, driven by `NOTIFICATION_PROVIDER` and the correspon
 
 ## Deployment (Coolify / Nixpacks)
 
-- **Build:** Nixpacks (or Docker) uses `npm ci`, `prisma generate`, `npm run build`.
+- **Build:** Nixpacks (or Docker) uses `npm ci`, `prisma generate`, `npm run build`. The Docker image build does **not** need an existing database: API routes are marked `dynamic = "force-dynamic"` so Next.js does not run Prisma against the DB during `next build`.
 - **Start:** `npm run start` (or `node server.js` in Docker standalone).
+- **Runtime DB:** After the container starts, the database must still have tables (`prisma db push` or `prisma migrate deploy` once per environment, plus optional `db:seed`). Without that, the app will 500 at request time, but the **image build** will succeed.
 - **Env:** Set all variables from `.env.example` in Coolify (or your platform). For production, set `DATABASE_URL` to a Postgres URL and run migrations (`prisma migrate deploy` or `prisma db push`) in the deploy pipeline or a one-off job.
 - **SQLite:** For pilot, `DATABASE_URL=file:./dev.db` works; ensure the app has write access to the path. For production, prefer Postgres.
 

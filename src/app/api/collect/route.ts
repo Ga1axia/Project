@@ -11,6 +11,8 @@ const bodySchema = z.object({
   notes: z.string().optional(),
 });
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: NextRequest) {
   const managerId = await getCurrentEmployeeId();
   if (!managerId) {

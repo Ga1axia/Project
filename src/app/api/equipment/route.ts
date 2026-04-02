@@ -3,6 +3,8 @@ import { getCurrentEmployeeId, getReportEmployeeIds } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { fetchRefTabAssignments } from "@/lib/ref-tab";
 
+export const dynamic = "force-dynamic";
+
 export async function GET(req: NextRequest) {
   const managerId = await getCurrentEmployeeId();
   if (!managerId) {
