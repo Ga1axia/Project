@@ -26,6 +26,18 @@ The deliverable document also describes capabilities outside the web UI (APIs, d
 
 **Docker:** Yes. The `Dockerfile` builds a standalone image and runs `node server.js`. Use **Postgres** in production (`DATABASE_URL=postgresql://...`); run `prisma db push` or `prisma migrate deploy` when the DB is available. For **SQLite** in Docker you need a writable volume for the DB file and must run `prisma db push` (and optionally seed) inside the container or in an init job.
 
+### Coolify / production: env vars for pilot auth and “Mark collected”
+
+Server-side routes (`/api/collect`, `/api/staff`, `/api/equipment`, etc.) resolve the current manager from environment variables, **not** from the browser login screen. If these don’t match rows in your `User` table, the API returns 401/403/404 and the staff page will show an error banner after you click **Mark collected**.
+
+| Variable | Required | Notes |
+|----------|----------|--------|
+| `DATABASE_URL` | Yes | Must point to a DB where `prisma db push` (and ideally seed or your AD sync) has run so `User` rows exist. |
+| `MANAGER_EMPLOYEE_IDS` | Yes (pilot) | Comma-separated employee IDs allowed as managers (e.g. `EMP001,EMP002`). Each ID should exist in `User.employeeId`. |
+| `CURRENT_USER_EMPLOYEE_ID` | No | If set, that user is the “logged in” manager for all API calls. Must be one of `MANAGER_EMPLOYEE_IDS` and must exist in the DB. If unset, the **first** value in `MANAGER_EMPLOYEE_IDS` is used. |
+
+**Checklist:** In Coolify, set `MANAGER_EMPLOYEE_IDS` (and optionally `CURRENT_USER_EMPLOYEE_ID`) to IDs that actually exist in your deployed database. Default seed uses `EMP001`–`EMP025`; production AD sync should use your real IDs.
+
 ---
 
 ## With env files set — what can it do?

@@ -1,7 +1,7 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { isLoggedIn } from "@/lib/auth-session";
 
@@ -24,6 +24,10 @@ export default function StaffDetailPage() {
   const [collecting, setCollecting] = useState<string | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState<string | null>(null);
+  /** Shown after staff loaded; collect API failures were previously invisible. */
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const successTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (!isLoggedIn()) {
@@ -55,9 +59,21 @@ export default function StaffDetailPage() {
     })();
   }, [employeeId, router]);
 
+  useEffect(() => {
+    return () => {
+      if (successTimeoutRef.current) clearTimeout(successTimeoutRef.current);
+    };
+  }, []);
+
   async function markCollected(assetTag: string, serial?: string) {
     if (!employeeId) return;
     setCollecting(assetTag);
+    setActionError(null);
+    setSuccessMessage(null);
+    if (successTimeoutRef.current) {
+      clearTimeout(successTimeoutRef.current);
+      successTimeoutRef.current = null;
+    }
     try {
       const res = await fetch("/api/collect", {
         method: "POST",
@@ -73,11 +89,16 @@ export default function StaffDetailPage() {
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || res.statusText);
       }
-      router.refresh();
       setEquipment((prev) => prev.filter((e) => e.assetTag !== assetTag));
       setNotes((prev) => ({ ...prev, [assetTag]: "" }));
+      const msg = `Marked ${assetTag} as collected. IT will be notified (if configured).`;
+      setSuccessMessage(msg);
+      successTimeoutRef.current = setTimeout(() => {
+        setSuccessMessage(null);
+        successTimeoutRef.current = null;
+      }, 6000);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Failed to mark collected");
+      setActionError(e instanceof Error ? e.message : "Failed to mark collected");
     } finally {
       setCollecting(null);
     }
@@ -96,6 +117,44 @@ export default function StaffDetailPage() {
         <h1 className="text-2xl font-bold text-[var(--text)]">{staff.displayName}</h1>
         <p className="text-[var(--muted)]">{staff.employeeId} · {staff.email}</p>
       </div>
+
+      {actionError && (
+        <div
+          className="flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-red-800"
+          role="alert"
+        >
+          <p className="text-sm">{actionError}</p>
+          <button
+            type="button"
+            className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-red-800 hover:bg-red-100"
+            onClick={() => setActionError(null)}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {successMessage && (
+        <div
+          className="flex items-start justify-between gap-3 rounded-lg border border-emerald-200 bg-emerald-50 p-4 text-emerald-900"
+          role="status"
+        >
+          <p className="text-sm">{successMessage}</p>
+          <button
+            type="button"
+            className="shrink-0 rounded-md px-2 py-1 text-sm font-medium text-emerald-900 hover:bg-emerald-100"
+            onClick={() => {
+              if (successTimeoutRef.current) {
+                clearTimeout(successTimeoutRef.current);
+                successTimeoutRef.current = null;
+              }
+              setSuccessMessage(null);
+            }}
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       <section className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
         <h2 className="mb-4 text-lg font-semibold text-[var(--text)]">Assigned equipment</h2>

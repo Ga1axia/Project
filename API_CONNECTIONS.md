@@ -85,4 +85,6 @@ Optional: `APP_BASE_URL` for links in notifications.
 | `MANAGER_EMPLOYEE_IDS` | Comma-separated employee IDs allowed to act as managers. |
 | `CURRENT_USER_EMPLOYEE_ID` | Impersonate this user (pilot). Omit in production when using SSO. |
 
+API routes use these env vars (plus `DATABASE_URL` / `User` rows) to authorize `/api/collect` and related calls. **Coolify / production:** set `MANAGER_EMPLOYEE_IDS` and optional `CURRENT_USER_EMPLOYEE_ID` to IDs that exist in the deployed database, or mark-collected requests will fail with 401/403/404. See [README.md](./README.md) (section *Coolify / production: env vars for pilot auth and “Mark collected”*).
+
 Production: replace with SSO (e.g. Entra/OIDC); resolve current user from token and map to `User.employeeId`.
