@@ -134,11 +134,11 @@ Exactly one channel is used, driven by `NOTIFICATION_PROVIDER` and the correspon
 
 ## Deployment (Coolify / Nixpacks)
 
-- **Build:** Nixpacks (or Docker) uses `npm ci`, `prisma generate`, `npm run build`. The Docker image build does **not** need an existing database: API routes are marked `dynamic = "force-dynamic"` so Next.js does not run Prisma against the DB during `next build`.
-- **Start:** `npm run start` (or `node server.js` in Docker standalone).
-- **Runtime DB:** After the container starts, the database must still have tables (`prisma db push` or `prisma migrate deploy` once per environment, plus optional `db:seed`). Without that, the app will 500 at request time, but the **image build** will succeed.
-- **Env:** Set all variables from `.env.example` in Coolify (or your platform). For production, set `DATABASE_URL` to a Postgres URL and run migrations (`prisma migrate deploy` or `prisma db push`) in the deploy pipeline or a one-off job.
+- **Build:** Nixpacks (or Docker) uses `npm ci`, `prisma generate`, `npm run build`. The build does **not** need an existing database.
+- **Start:** The startup script (`start.sh`) **automatically** runs `prisma db push` (creates/syncs tables) and seeds pilot data (if the User table is empty) before starting Next.js. No manual DB setup is needed.
+- **Env:** Set all variables from `.env.example` in Coolify (or your platform). For production, set `DATABASE_URL` to a Postgres URL.
 - **SQLite:** For pilot, `DATABASE_URL=file:./dev.db` works; ensure the app has write access to the path. For production, prefer Postgres.
+- **Data persistence (SQLite + Docker):** The SQLite file lives inside the container. To persist across redeploys, mount a volume for the DB path (e.g. `-v /data:/app/data` with `DATABASE_URL=file:./data/portal.db`). Postgres does not have this issue.
 
 ---
 
