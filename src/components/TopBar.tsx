@@ -2,15 +2,17 @@
 
 import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter } from "next/navigation";
+import { signOut as nextAuthSignOut } from "next-auth/react";
 import { logout } from "@/lib/auth-session";
 
 export default function TopBar() {
   const router = useRouter();
-  const pathname = usePathname();
   const [searchValue, setSearchValue] = useState("");
   const [helpOpen, setHelpOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [syncTime, setSyncTime] = useState<string | null>(null);
+  const [ssoEnabled, setSsoEnabled] = useState(false);
   const helpRef = useRef<HTMLDivElement>(null);
   const notifRef = useRef<HTMLDivElement>(null);
 
@@ -24,6 +26,28 @@ export default function TopBar() {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
+  useEffect(() => {
+    fetch("/api/auth/config")
+      .then((r) => r.json())
+      .then((d) => setSsoEnabled(d.ssoEnabled ?? false))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/admin/sync-status")
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data) return;
+        const ts = data.lastSyncedAt;
+        if (ts) {
+          const d = new Date(ts);
+          const mins = Math.round((Date.now() - d.getTime()) / 60000);
+          setSyncTime(mins < 1 ? "Just now" : mins < 60 ? `${mins}m ago` : `${Math.round(mins / 60)}h ago`);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   function handleGlobalSearch(e: React.FormEvent) {
     e.preventDefault();
     const q = searchValue.trim();
@@ -33,7 +57,11 @@ export default function TopBar() {
 
   function handleSignOut() {
     logout();
-    router.replace("/login");
+    if (ssoEnabled) {
+      nextAuthSignOut({ callbackUrl: "/login" });
+    } else {
+      router.replace("/login");
+    }
   }
 
   return (
@@ -52,6 +80,12 @@ export default function TopBar() {
         </div>
       </form>
       <div className="flex shrink-0 items-center gap-1">
+        {syncTime && (
+          <span className="mr-2 flex items-center gap-1.5 rounded-md bg-gray-50 px-2.5 py-1.5 text-xs text-[var(--muted)]">
+            <SyncStatusIcon className="h-3.5 w-3.5" />
+            Last synced: {syncTime}
+          </span>
+        )}
         <Link
           href="/collection"
           className="rounded-md p-2 text-[var(--text-secondary)] hover:bg-gray-100"
@@ -139,6 +173,14 @@ function BellIcon({ className }: { className?: string }) {
   return (
     <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
+    </svg>
+  );
+}
+
+function SyncStatusIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
     </svg>
   );
 }

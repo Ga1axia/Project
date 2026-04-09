@@ -1,3 +1,5 @@
+import { getServerSession } from "next-auth";
+import { authOptions, isSSOConfigured } from "./auth-options";
 import { prisma } from "./db";
 
 const MANAGER_IDS = (process.env.MANAGER_EMPLOYEE_IDS ?? "EMP001,EMP002").split(",").map((s) => s.trim());
@@ -5,8 +7,44 @@ const CURRENT_OVERRIDE = process.env.CURRENT_USER_EMPLOYEE_ID?.trim();
 
 export type AuthUser = { employeeId: string; displayName: string; email: string; isManager: boolean };
 
-/** For pilot: resolve current user from env override or first manager in list. */
+/**
+ * Resolve the current user.
+ * SSO mode: read from next-auth session, match to local User row.
+ * Pilot mode: read from CURRENT_USER_EMPLOYEE_ID or first MANAGER_EMPLOYEE_IDS.
+ */
 export async function getCurrentUser(): Promise<AuthUser | null> {
+  if (isSSOConfigured()) {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) return null;
+
+    const ssoUser = session.user as Record<string, unknown>;
+    const employeeId =
+      (ssoUser.employeeId as string) ??
+      (ssoUser.upn as string) ??
+      (ssoUser.email as string) ??
+      null;
+    if (!employeeId) return null;
+
+    const user = await prisma.user.findFirst({
+      where: {
+        OR: [
+          { employeeId },
+          { upn: employeeId },
+          { email: employeeId },
+        ],
+      },
+      select: { employeeId: true, displayName: true, email: true, isManager: true },
+    });
+    if (!user) return null;
+    return {
+      employeeId: user.employeeId,
+      displayName: user.displayName,
+      email: user.email,
+      isManager: user.isManager,
+    };
+  }
+
+  // Pilot mode fallback
   const employeeId = CURRENT_OVERRIDE || MANAGER_IDS[0] || null;
   if (!employeeId) return null;
   const user = await prisma.user.findUnique({

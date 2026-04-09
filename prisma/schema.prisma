@@ -17,6 +17,7 @@ model User {
   manager           User?    @relation("ManagerReports", fields: [managerId], references: [id])
   directReports     User[]   @relation("ManagerReports")
   isManager         Boolean  @default(false)
+  isActive          Boolean  @default(true)
   lastSyncedAt      DateTime?
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
@@ -51,6 +52,7 @@ model CollectionEvent {
   markedCollectedAt             DateTime @default(now())
   notes                         String?
   status                        String   @default("COLLECTED_PENDING_IT")
+  collectedByRole               String   @default("manager")
 
   closedOutAt                   DateTime?
   closedOutByItEmployeeId       String?

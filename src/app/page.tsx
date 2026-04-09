@@ -43,7 +43,7 @@ function DashboardPageInner() {
         const [meRes, staffRes, eqRes] = await Promise.all([
           fetch("/api/me"),
           fetch("/api/staff"),
-          fetch("/api/equipment"),
+          fetch("/api/equipment?include_collected=true"),
         ]);
         if (!meRes.ok) throw new Error("Not authenticated");
         const me = await meRes.json();

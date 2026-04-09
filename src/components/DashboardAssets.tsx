@@ -11,6 +11,8 @@ const PAGE_SIZE_OPTIONS = [5, 10, 25];
 
 const ASSET_FILTER_OPTIONS = [
   { value: "all", label: "All" },
+  { value: "outstanding", label: "Outstanding only" },
+  { value: "collected", label: "Collected only" },
   { value: "laptop", label: "Laptops only" },
   { value: "monitor", label: "Monitors only" },
 ];
@@ -42,7 +44,11 @@ export default function DashboardAssets({ data, initialSearchQuery = "" }: { dat
         );
       });
     }
-    if (filterBy === "laptop") {
+    if (filterBy === "outstanding") {
+      list = list.filter((e) => e.collectionStatus !== "collected");
+    } else if (filterBy === "collected") {
+      list = list.filter((e) => e.collectionStatus === "collected");
+    } else if (filterBy === "laptop") {
       list = list.filter((e) => (e.model?.toLowerCase().includes("mac") || e.model?.toLowerCase().includes("laptop")) ?? false);
     } else if (filterBy === "monitor") {
       list = list.filter((e) => e.model?.toLowerCase().includes("monitor") ?? false);
@@ -87,23 +93,25 @@ export default function DashboardAssets({ data, initialSearchQuery = "" }: { dat
 
       <div className="overflow-hidden rounded-lg border border-[var(--border)] bg-white shadow-sm">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[600px]">
-<thead>
-                <tr>
+          <table className="w-full min-w-[700px]">
+            <thead>
+              <tr>
                 <th className="table-header">Asset tag</th>
                 <th className="table-header">Serial</th>
                 <th className="table-header">Model</th>
                 <th className="table-header">Assigned to</th>
+                <th className="table-header">Status</th>
                 <th className="table-header">Action</th>
               </tr>
             </thead>
             <tbody>
               {paginatedEquipment.map((e) => {
                 const assignee = staffById[e.assignedToEmployeeId];
+                const isCollected = e.collectionStatus === "collected";
                 return (
                   <tr
                     key={`${e.assetTag}-${e.assignedToEmployeeId}`}
-                    className="border-b border-[var(--border)] transition hover:bg-[var(--table-header-bg)]/50"
+                    className={`border-b border-[var(--border)] transition hover:bg-[var(--table-header-bg)]/50 ${isCollected ? "opacity-50" : ""}`}
                   >
                     <td className="table-cell font-medium text-[var(--text)]">{e.assetTag}</td>
                     <td className="table-cell text-[var(--text-secondary)]">{e.serial ?? "—"}</td>
@@ -121,12 +129,27 @@ export default function DashboardAssets({ data, initialSearchQuery = "" }: { dat
                       )}
                     </td>
                     <td className="table-cell">
-                      <Link
-                        href={`/staff/${encodeURIComponent(e.assignedToEmployeeId)}`}
-                        className="inline-flex rounded-lg bg-[var(--success)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
-                      >
-                        Mark collected
-                      </Link>
+                      {isCollected ? (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-medium text-emerald-700">
+                          ✓ Collected
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+                          Outstanding
+                        </span>
+                      )}
+                    </td>
+                    <td className="table-cell">
+                      {isCollected ? (
+                        <span className="text-sm text-[var(--muted)]">—</span>
+                      ) : (
+                        <Link
+                          href={`/staff/${encodeURIComponent(e.assignedToEmployeeId)}`}
+                          className="inline-flex rounded-lg bg-[var(--success)] px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+                        >
+                          Mark collected
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 );
@@ -153,4 +176,3 @@ export default function DashboardAssets({ data, initialSearchQuery = "" }: { dat
     </div>
   );
 }
-

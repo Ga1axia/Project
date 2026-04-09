@@ -9,6 +9,7 @@ const bodySchema = z.object({
   serial: z.string().optional(),
   assignedToEmployeeId: z.string().min(1),
   notes: z.string().optional(),
+  collectedByRole: z.enum(["manager", "it"]).optional(),
 });
 
 export const dynamic = "force-dynamic";
@@ -35,7 +36,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: "Invalid body", details: parsed.error.flatten() }, { status: 400 });
   }
-  const { assetTag, serial, assignedToEmployeeId, notes } = parsed.data;
+  const { assetTag, serial, assignedToEmployeeId, notes, collectedByRole } = parsed.data;
   if (!scope.includes(assignedToEmployeeId)) {
     return NextResponse.json({ error: "Forbidden: not in your report scope" }, { status: 403 });
   }
@@ -64,9 +65,14 @@ export async function POST(req: NextRequest) {
       markedCollectedByManagerId: manager.id,
       notes: notes ?? null,
       status: "COLLECTED_PENDING_IT",
+      collectedByRole: collectedByRole ?? "manager",
       equipmentAssignmentId: equipment?.id ?? null,
     },
   });
+
+  if (equipment) {
+    await prisma.equipmentAssignment.delete({ where: { id: equipment.id } });
+  }
 
   const notifyResult = await notifyItCollected({
     assetTag,

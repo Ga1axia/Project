@@ -105,32 +105,45 @@ export async function fetchRefTabAssignments(employeeIds: string[]): Promise<Ref
 async function fetchReftabNativeAssets(employeeIds: string[]): Promise<RefTabAssignment[]> {
   const idSet = new Set(employeeIds.map((s) => s.trim()).filter(Boolean));
   const limit = ASSETS_LIMIT;
-  const fullUrl = `${REF_TAB_URL}/assets?limit=${limit}`;
-  const headers = signReftabRequest(fullUrl, "GET");
+  const allAssets: Record<string, unknown>[] = [];
+  let page = 1;
+  const maxPages = 50; // Safety limit
 
-  let res: Response;
-  try {
-    res = await fetch(fullUrl, { method: "GET", headers, cache: "no-store" });
-  } catch {
-    return [];
+  while (page <= maxPages) {
+    const fullUrl = `${REF_TAB_URL}/assets?limit=${limit}&page=${page}`;
+    const headers = signReftabRequest(fullUrl, "GET");
+
+    let res: Response;
+    try {
+      res = await fetch(fullUrl, { method: "GET", headers, cache: "no-store" });
+    } catch {
+      break;
+    }
+    if (!res.ok) break;
+
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      break;
+    }
+
+    const list: Record<string, unknown>[] = Array.isArray(data)
+      ? (data as Record<string, unknown>[])
+      : (data as { data?: unknown }).data != null && Array.isArray((data as { data: unknown }).data)
+        ? ((data as { data: Record<string, unknown>[] }).data)
+        : [];
+
+    if (list.length === 0) break;
+    allAssets.push(...list);
+
+    // If we received fewer than the limit, we've reached the last page
+    if (list.length < limit) break;
+    page++;
   }
-  if (!res.ok) return [];
-
-  let data: unknown;
-  try {
-    data = await res.json();
-  } catch {
-    return [];
-  }
-
-  const list: Record<string, unknown>[] = Array.isArray(data)
-    ? (data as Record<string, unknown>[])
-    : (data as { data?: unknown }).data != null && Array.isArray((data as { data: unknown }).data)
-      ? ((data as { data: Record<string, unknown>[] }).data)
-      : [];
 
   const out: RefTabAssignment[] = [];
-  for (const asset of list) {
+  for (const asset of allAssets) {
     const assigneeRaw = getNested(asset, ASSIGNEE_FIELD);
     const match = assigneeToMatchString(assigneeRaw);
     if (!match || !idSetHas(idSet, match)) continue;
@@ -154,6 +167,121 @@ async function fetchReftabNativeAssets(employeeIds: string[]): Promise<RefTabAss
     });
   }
   return out;
+}
+
+/** Fetch ALL assets from Reftab (no employee filter) with full pagination. */
+async function fetchAllReftabAssets(): Promise<RefTabAssignment[]> {
+  if (!REF_TAB_PUBLIC || !REF_TAB_SECRET) return [];
+  const limit = ASSETS_LIMIT;
+  const allAssets: Record<string, unknown>[] = [];
+  let page = 1;
+  const maxPages = 100;
+
+  while (page <= maxPages) {
+    const fullUrl = `${REF_TAB_URL}/assets?limit=${limit}&page=${page}`;
+    const headers = signReftabRequest(fullUrl, "GET");
+    let res: Response;
+    try {
+      res = await fetch(fullUrl, { method: "GET", headers, cache: "no-store" });
+    } catch {
+      break;
+    }
+    if (!res.ok) break;
+    let data: unknown;
+    try {
+      data = await res.json();
+    } catch {
+      break;
+    }
+    const list: Record<string, unknown>[] = Array.isArray(data)
+      ? (data as Record<string, unknown>[])
+      : (data as { data?: unknown }).data != null && Array.isArray((data as { data: unknown }).data)
+        ? ((data as { data: Record<string, unknown>[] }).data)
+        : [];
+    if (list.length === 0) break;
+    allAssets.push(...list);
+    if (list.length < limit) break;
+    page++;
+  }
+
+  const out: RefTabAssignment[] = [];
+  for (const asset of allAssets) {
+    const assigneeRaw = getNested(asset, ASSIGNEE_FIELD);
+    const match = assigneeToMatchString(assigneeRaw);
+    if (!match) continue;
+
+    const tag =
+      stringifyField(asset, ASSET_TAG_FIELD) ??
+      (typeof asset.id === "string" ? asset.id : undefined) ??
+      (typeof asset.serial === "string" ? asset.serial : undefined);
+    if (!tag) continue;
+
+    out.push({
+      asset_tag: tag,
+      serial: stringifyField(asset, SERIAL_FIELD) ?? undefined,
+      model: stringifyField(asset, MODEL_FIELD) ?? undefined,
+      assigned_to_employee_id: match,
+      status: stringifyField(asset, "status") ?? undefined,
+    });
+  }
+  return out;
+}
+
+export type ReftabSyncResult = { upserted: number; skippedCollected: number; total: number };
+
+/**
+ * Sync all Reftab assets into local EquipmentAssignment table.
+ * Cross-references CollectionEvent to skip items already collected.
+ */
+export async function syncReftabToDb(): Promise<ReftabSyncResult> {
+  const { prisma } = await import("@/lib/db");
+
+  const assets = await fetchAllReftabAssets();
+  const now = new Date();
+  let upserted = 0;
+  let skippedCollected = 0;
+
+  // Get all collected asset+employee combinations
+  const collectedEvents = await prisma.collectionEvent.findMany({
+    where: { status: { in: ["COLLECTED_PENDING_IT", "CLOSED_OUT"] } },
+    select: { assetTag: true, assignedToEmployeeId: true },
+  });
+  const collectedSet = new Set(
+    collectedEvents.map((ce) => `${ce.assetTag}-${ce.assignedToEmployeeId}`)
+  );
+
+  for (const asset of assets) {
+    const key = `${asset.asset_tag}-${asset.assigned_to_employee_id}`;
+    if (collectedSet.has(key)) {
+      skippedCollected++;
+      continue;
+    }
+
+    await prisma.equipmentAssignment.upsert({
+      where: {
+        assetTag_assignedToEmployeeId: {
+          assetTag: asset.asset_tag,
+          assignedToEmployeeId: asset.assigned_to_employee_id,
+        },
+      },
+      update: {
+        serial: asset.serial ?? null,
+        model: asset.model ?? null,
+        lastSyncedAt: now,
+      },
+      create: {
+        assetTag: asset.asset_tag,
+        serial: asset.serial ?? null,
+        model: asset.model ?? null,
+        assignedToEmployeeId: asset.assigned_to_employee_id,
+        source: "ref_tab",
+        lastSyncedAt: now,
+      },
+    });
+    upserted++;
+  }
+
+  return { upserted, skippedCollected, total: assets.length };
 }
 
 /** Legacy: custom HTTPS proxy that accepts Bearer + /assignments?employee_id= */

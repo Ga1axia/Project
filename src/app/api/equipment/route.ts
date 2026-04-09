@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCurrentEmployeeId, getReportEmployeeIds } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { fetchRefTabAssignments } from "@/lib/ref-tab";
 
 export const dynamic = "force-dynamic";
 
@@ -22,6 +21,8 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "Forbidden or not found" }, { status: 403 });
   }
 
+  const includeCollected = req.nextUrl.searchParams.get("include_collected") === "true";
+
   const fromDb = await prisma.equipmentAssignment.findMany({
     where: { assignedToEmployeeId: { in: targetIds } },
     select: {
@@ -36,30 +37,37 @@ export async function GET(req: NextRequest) {
     orderBy: { assetTag: "asc" },
   });
 
-  const fromRefTab = await fetchRefTabAssignments(targetIds);
-  const refTabSet = new Set(fromDb.map((e) => `${e.assetTag}-${e.assignedToEmployeeId}`));
-  const merged = [
-    ...fromDb.map((e) => ({
-      id: e.id,
-      assetTag: e.assetTag,
-      serial: e.serial ?? undefined,
-      model: e.model ?? undefined,
-      assignedToEmployeeId: e.assignedToEmployeeId,
-      source: e.source,
-      lastSyncedAt: e.lastSyncedAt?.toISOString() ?? null,
-    })),
-    ...fromRefTab
-      .filter((a) => !refTabSet.has(`${a.asset_tag}-${a.assigned_to_employee_id}`))
-      .map((a) => ({
-        id: null,
-        assetTag: a.asset_tag,
-        serial: a.serial,
-        model: a.model,
-        assignedToEmployeeId: a.assigned_to_employee_id,
-        source: "ref_tab" as const,
-        lastSyncedAt: null as string | null,
-      })),
-  ];
+  const items = fromDb.map((e) => ({
+    id: e.id,
+    assetTag: e.assetTag,
+    serial: e.serial ?? undefined,
+    model: e.model ?? undefined,
+    assignedToEmployeeId: e.assignedToEmployeeId,
+    source: e.source,
+    lastSyncedAt: e.lastSyncedAt?.toISOString() ?? null,
+  }));
 
-  return NextResponse.json(merged);
+  const collectionEvents = await prisma.collectionEvent.findMany({
+    where: {
+      assignedToEmployeeId: { in: targetIds },
+      status: { in: ["COLLECTED_PENDING_IT", "CLOSED_OUT"] },
+    },
+    select: { assetTag: true, assignedToEmployeeId: true },
+  });
+  const collectedSet = new Set(
+    collectionEvents.map((ce) => `${ce.assetTag}-${ce.assignedToEmployeeId}`)
+  );
+
+  const annotated = items.map((e) => ({
+    ...e,
+    collectionStatus: collectedSet.has(`${e.assetTag}-${e.assignedToEmployeeId}`)
+      ? ("collected" as const)
+      : ("outstanding" as const),
+  }));
+
+  const result = includeCollected
+    ? annotated
+    : annotated.filter((e) => e.collectionStatus === "outstanding");
+
+  return NextResponse.json(result);
 }

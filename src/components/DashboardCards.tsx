@@ -9,6 +9,7 @@ const CARD_FILTER_OPTIONS = [
   { value: "all", label: "All" },
   { value: "has_equipment", label: "Has equipment" },
   { value: "no_equipment", label: "No equipment" },
+  { value: "outstanding_only", label: "Outstanding only" },
 ];
 
 export default function DashboardCards({ data, initialSearchQuery = "" }: { data: DashboardData; initialSearchQuery?: string }) {
@@ -35,6 +36,11 @@ export default function DashboardCards({ data, initialSearchQuery = "" }: { data
       list = list.filter((s) => (equipmentByEmployee[s.employeeId]?.length ?? 0) > 0);
     } else if (filterBy === "no_equipment") {
       list = list.filter((s) => (equipmentByEmployee[s.employeeId]?.length ?? 0) === 0);
+    } else if (filterBy === "outstanding_only") {
+      list = list.filter((s) => {
+        const items = equipmentByEmployee[s.employeeId] ?? [];
+        return items.some((e) => e.collectionStatus !== "collected");
+      });
     }
     return list;
   }, [staff, searchQuery, filterBy, equipmentByEmployee]);
@@ -60,6 +66,8 @@ export default function DashboardCards({ data, initialSearchQuery = "" }: { data
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {filteredStaff.map((s) => {
             const items = equipmentByEmployee[s.employeeId] ?? [];
+            const outstanding = items.filter((e) => e.collectionStatus !== "collected").length;
+            const collected = items.filter((e) => e.collectionStatus === "collected").length;
             return (
               <div
                 key={s.employeeId}
@@ -71,20 +79,45 @@ export default function DashboardCards({ data, initialSearchQuery = "" }: { data
                       <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[var(--accent)]/20 text-[var(--accent)]">
                         {s.displayName.charAt(0)}
                       </div>
-                      <h3 className="mt-2 font-semibold text-[var(--text)]">{s.displayName}</h3>
+                      <h3 className="mt-2 font-semibold text-[var(--text)]">
+                        {s.displayName}
+                        {s.isActive === false && (
+                          <span className="ml-2 inline-flex items-center rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                            Inactive
+                          </span>
+                        )}
+                      </h3>
                       <p className="truncate text-sm text-[var(--muted)]">{s.email}</p>
                       <p className="text-xs text-[var(--muted)]">{s.employeeId}</p>
                     </div>
                   </div>
                   <div className="border-t border-[var(--border)] pt-3">
-                    <p className="text-sm text-[var(--muted)]">
-                      <strong className="text-[var(--text)]">{items.length}</strong> equipment item(s)
-                    </p>
+                    <div className="flex items-center gap-3 text-sm">
+                      <span className="text-[var(--muted)]">
+                        <strong className="text-amber-600">{outstanding}</strong> outstanding
+                      </span>
+                      {collected > 0 && (
+                        <span className="inline-flex items-center rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
+                          {collected} collected
+                        </span>
+                      )}
+                    </div>
+                    {s.isActive !== false && outstanding > 0 && (
+                      <p className="mt-1 flex items-center gap-1 text-xs text-amber-600">
+                        <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-2.5L13.732 4c-.77-.833-1.964-.833-2.732 0L4.072 16.5c-.77.833.192 2.5 1.732 2.5z" />
+                        </svg>
+                        Active — Equipment Outstanding
+                      </p>
+                    )}
                     {items.length > 0 && (
                       <ul className="mt-2 space-y-1 text-sm text-[var(--muted)]">
                         {items.slice(0, 3).map((e) => (
-                          <li key={`${e.assetTag}-${e.assignedToEmployeeId}`}>
+                          <li key={`${e.assetTag}-${e.assignedToEmployeeId}`} className={e.collectionStatus === "collected" ? "line-through opacity-50" : ""}>
                             {e.assetTag} — {e.model ?? "—"}
+                            {e.collectionStatus === "collected" && (
+                              <span className="ml-1 text-xs text-emerald-600">✓</span>
+                            )}
                           </li>
                         ))}
                         {items.length > 3 && <li>+{items.length - 3} more</li>}
@@ -113,9 +146,17 @@ export default function DashboardCards({ data, initialSearchQuery = "" }: { data
 
       <div className="rounded-lg border border-[var(--border)] bg-white p-4 shadow-sm">
         <h2 className="text-lg font-semibold text-[var(--text)]">Equipment summary</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">
-          Total equipment in scope: <strong className="text-[var(--text)]">{data.equipment.length}</strong>
-        </p>
+        <div className="mt-2 flex gap-6 text-sm">
+          <p className="text-[var(--muted)]">
+            Total: <strong className="text-[var(--text)]">{data.equipment.length}</strong>
+          </p>
+          <p className="text-[var(--muted)]">
+            Outstanding: <strong className="text-amber-600">{data.equipment.filter((e) => e.collectionStatus !== "collected").length}</strong>
+          </p>
+          <p className="text-[var(--muted)]">
+            Collected: <strong className="text-emerald-600">{data.equipment.filter((e) => e.collectionStatus === "collected").length}</strong>
+          </p>
+        </div>
       </div>
     </div>
   );

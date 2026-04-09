@@ -1,4 +1,9 @@
-export type Staff = { employeeId: string; displayName: string; email: string };
+export type Staff = {
+  employeeId: string;
+  displayName: string;
+  email: string;
+  isActive?: boolean;
+};
 
 export type Equipment = {
   id: string | null;
@@ -7,6 +12,7 @@ export type Equipment = {
   model?: string;
   assignedToEmployeeId: string;
   source: string;
+  collectionStatus?: "collected" | "outstanding";
 };
 
 export type Me = { employeeId: string; displayName: string; email: string; isManager: boolean };
